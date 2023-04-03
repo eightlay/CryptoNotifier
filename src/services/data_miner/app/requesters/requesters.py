@@ -1,19 +1,12 @@
 from __future__ import annotations
 import asyncio
 
+from shared_modules.acc import AsyncClass
 from .requester import Requester, RequesterCreator
 from shared_modules.stocks import Exchange, Exchanges
 
 
-class RequestersCreator:
-    @classmethod
-    async def create(cls, exchanges: Exchanges) -> Requesters:
-        r = Requesters(exchanges)
-        await r.start()
-        return r
-
-
-class Requesters:
+class Requesters(AsyncClass):
     def __init__(self, exchanges: Exchanges) -> None:
         self.requesters: dict[Exchange, Requester]
         self.exchanges = exchanges.copy()
@@ -24,10 +17,16 @@ class Requesters:
             for r in self.exchanges
         }
 
-    async def close(self):
+    async def stop(self):
         asyncio.gather(*(
             r.on_stop() for r in self.requesters.values()
         ))
+
+    async def __aenter__(self) -> Requesters:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return
 
     def __iter__(self):
         return iter(self.requesters.items())

@@ -2,43 +2,48 @@ from __future__ import annotations
 import os
 import asyncio
 from typing import TypeAlias
-from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
+from aiokafka import AIOKafkaProducer
 
-from shared_modules.acc import AsyncClass
 from shared_modules.stocks import (
     Ticker, Tickers, Exchange, Exchanges,
     ExchangeLevelOne, ExchangesLevelsOne,
 )
-from shared_modules.messages import get_producer, get_consumer
-from .requesters import Requesters, RequestersCreator, RequesterResponse
+from shared_modules.acc import AsyncClass, ACC
+from shared_modules.messages import get_producer
+from requesters import Requesters, RequesterResponse
 
 ParsedData: TypeAlias = dict[Ticker, ExchangesLevelsOne]
 
 
 class DataMiner(AsyncClass):
-    def __init__(self, exchanges: list[str]) -> None:
+    def __init__(
+        self,
+        exchanges: list[str],
+        tickers: list[str] | None = None,
+    ) -> None:
         self.lock = asyncio.Lock()
-        self.valid_tickers: dict[Ticker, int] = {}
         self.exchanges = Exchanges.from_str_list(exchanges)
-        self.tickers: dict[Exchange, set[Ticker]] = {
-            e: set() for e in self.exchanges
+        self.valid_tickers: dict[Ticker, int] = {
+            t: len(self.exchanges)
+            for t in tickers or []
         }
-        
+        self.tickers: dict[Exchange, set[Ticker]] = {
+            e: set(tickers or []) for e in self.exchanges
+        }
+
         self.topic_out = os.getenv("KAFKA_TOPIC_LEVEL_ONE", 'level_one')
         self.topic_in = os.getenv("KAFKA_TOPIC_SUBSCRIBE", 'subscribe')
 
         self.requesters: Requesters
         self.message_producer: AIOKafkaProducer
-        self.message_consumer: AIOKafkaConsumer
 
     async def __aenter__(self) -> DataMiner:
-        self.requesters = await RequestersCreator.create(self.exchanges)
+        self.requesters = await ACC.create(Requesters, self.exchanges)
         self.message_producer = await get_producer()
-        self.message_consumer = await get_consumer(self.topic_in)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self.requesters.close()
+        await self.requesters.stop()
         await self.message_producer.stop()
 
     async def start(self) -> None:
@@ -48,12 +53,8 @@ class DataMiner(AsyncClass):
         pass
 
     async def receive_messages(self) -> None:
-        tickers = Tickers()
-
-        async for ticker in self.message_consumer:
-            tickers.append(Ticker(ticker))
-            
-        await self.add_tickers(tickers)
+        # TODO
+        return
         
     async def add_tickers(self, tickers: Tickers) -> None:
         async with self.lock:
@@ -71,6 +72,7 @@ class DataMiner(AsyncClass):
 
     async def serve_subscriptions(self) -> None:
         data = await self.get_level_one()
+        print(data)
         
         await asyncio.gather(*(
             self.send_ticker_data(ticker, prices)

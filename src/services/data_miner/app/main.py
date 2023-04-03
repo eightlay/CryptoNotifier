@@ -16,14 +16,15 @@ async def main() -> None:
     )
 
     # Analyzer
-    dm = await ACC.create(DataMiner, EXCHANGES)
- 
+    dm = await ACC.create(DataMiner, EXCHANGES, ['BTC/USDT'])
+
     # Main loop
     async with dm:
         logging.info("DM STARTED")
 
         while True:
-            await dm.receive_messages()
+            # TODO
+            # await dm.receive_messages()
             await dm.serve_subscriptions()
             await asyncio.sleep(SLEEP_SECONDS)
 
